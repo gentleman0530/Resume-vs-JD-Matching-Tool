@@ -233,7 +233,7 @@ Deno.serve(async (req) => {
           analysis_id: analysis.id,
           user_id: user.id,
           file_name: r.file_name,
-          raw_text: r.text.slice(0, 50000),
+          raw_text: sanitize(r.text).slice(0, 50000),
           score: 0,
           summary: `Failed to analyze: ${e instanceof Error ? e.message : String(e)}`,
           skill_match: [],

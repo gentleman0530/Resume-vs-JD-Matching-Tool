@@ -95,7 +95,11 @@ const candidateTool = {
   },
 };
 
-async function callAI(messages: any[], tool: any) {
+const sanitize = (s: string) => s.replace(/\u0000/g, "").replace(/\\u0000/g, "");
+
+const sleep = (ms: number) => new Promise((res) => setTimeout(res, ms));
+
+async function callAI(messages: any[], tool: any, attempt = 0): Promise<any> {
   const r = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
     method: "POST",
     headers: {
@@ -109,6 +113,12 @@ async function callAI(messages: any[], tool: any) {
       tool_choice: { type: "function", function: { name: tool.function.name } },
     }),
   });
+  if (r.status === 429 && attempt < 4) {
+    const backoff = 2000 * Math.pow(2, attempt);
+    console.log(`Rate limited, retrying in ${backoff}ms (attempt ${attempt + 1})`);
+    await sleep(backoff);
+    return callAI(messages, tool, attempt + 1);
+  }
   if (!r.ok) {
     const t = await r.text();
     throw new Error(`AI ${r.status}: ${t}`);
@@ -179,8 +189,11 @@ Deno.serve(async (req) => {
 
     // 3. Score each resume (sequentially to respect rate limits)
     const candidates: any[] = [];
-    for (const r of body.resumes) {
+    for (let i = 0; i < body.resumes.length; i++) {
+      const r = body.resumes[i];
+      const cleanText = sanitize(r.text);
       try {
+        if (i > 0) await sleep(800);
         const scored = await callAI(
           [
             {
@@ -190,7 +203,7 @@ Deno.serve(async (req) => {
             },
             {
               role: "user",
-              content: `JOB REQUIREMENTS:\n${JSON.stringify(requirements)}\n\nRESUME (${r.file_name}):\n${r.text.slice(0, 18000)}`,
+              content: `JOB REQUIREMENTS:\n${JSON.stringify(requirements)}\n\nRESUME (${r.file_name}):\n${cleanText.slice(0, 18000)}`,
             },
           ],
           candidateTool,
@@ -199,7 +212,7 @@ Deno.serve(async (req) => {
           analysis_id: analysis.id,
           user_id: user.id,
           file_name: r.file_name,
-          raw_text: r.text.slice(0, 50000),
+          raw_text: cleanText.slice(0, 50000),
           candidate_name: scored.candidate_name ?? null,
           email: scored.email ?? null,
           phone: scored.phone ?? null,
@@ -220,7 +233,7 @@ Deno.serve(async (req) => {
           analysis_id: analysis.id,
           user_id: user.id,
           file_name: r.file_name,
-          raw_text: r.text.slice(0, 50000),
+          raw_text: sanitize(r.text).slice(0, 50000),
           score: 0,
           summary: `Failed to analyze: ${e instanceof Error ? e.message : String(e)}`,
           skill_match: [],

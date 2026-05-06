@@ -189,8 +189,11 @@ Deno.serve(async (req) => {
 
     // 3. Score each resume (sequentially to respect rate limits)
     const candidates: any[] = [];
-    for (const r of body.resumes) {
+    for (let i = 0; i < body.resumes.length; i++) {
+      const r = body.resumes[i];
+      const cleanText = sanitize(r.text);
       try {
+        if (i > 0) await sleep(800);
         const scored = await callAI(
           [
             {
@@ -200,7 +203,7 @@ Deno.serve(async (req) => {
             },
             {
               role: "user",
-              content: `JOB REQUIREMENTS:\n${JSON.stringify(requirements)}\n\nRESUME (${r.file_name}):\n${r.text.slice(0, 18000)}`,
+              content: `JOB REQUIREMENTS:\n${JSON.stringify(requirements)}\n\nRESUME (${r.file_name}):\n${cleanText.slice(0, 18000)}`,
             },
           ],
           candidateTool,
@@ -209,7 +212,7 @@ Deno.serve(async (req) => {
           analysis_id: analysis.id,
           user_id: user.id,
           file_name: r.file_name,
-          raw_text: r.text.slice(0, 50000),
+          raw_text: cleanText.slice(0, 50000),
           candidate_name: scored.candidate_name ?? null,
           email: scored.email ?? null,
           phone: scored.phone ?? null,

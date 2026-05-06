@@ -95,7 +95,11 @@ const candidateTool = {
   },
 };
 
-async function callAI(messages: any[], tool: any) {
+const sanitize = (s: string) => s.replace(/\u0000/g, "").replace(/\\u0000/g, "");
+
+const sleep = (ms: number) => new Promise((res) => setTimeout(res, ms));
+
+async function callAI(messages: any[], tool: any, attempt = 0): Promise<any> {
   const r = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
     method: "POST",
     headers: {
@@ -109,6 +113,12 @@ async function callAI(messages: any[], tool: any) {
       tool_choice: { type: "function", function: { name: tool.function.name } },
     }),
   });
+  if (r.status === 429 && attempt < 4) {
+    const backoff = 2000 * Math.pow(2, attempt);
+    console.log(`Rate limited, retrying in ${backoff}ms (attempt ${attempt + 1})`);
+    await sleep(backoff);
+    return callAI(messages, tool, attempt + 1);
+  }
   if (!r.ok) {
     const t = await r.text();
     throw new Error(`AI ${r.status}: ${t}`);
